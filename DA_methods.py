@@ -1,3 +1,7 @@
+""" Data assimilation methods
+Adapted form PyDA project: https://github.com/Shady-Ahmed/PyDA
+Reference: https://www.mdpi.com/2311-5521/5/4/225
+"""
 import numpy as np
 from numba import jit
 
@@ -34,40 +38,46 @@ def Lin3dvar(ub,w,H,R,B,opt):
     return ua
 
 @jit
-def EnKF(ubi,w,H,R,B):
+def ens_inflate(posterior,prior,opt,factor):
+    
+    inflated=np.zeros(posterior.shape)
+    n,N=prior.shape
+    if opt == "multiplicative": 
+        mean_post=(posterior.sum(axis=-1)/N).repeat(N).reshape(n,N)
+        inflated=posterior+factor*(posterior-mean_post)
+    
+    elif opt == "relaxation":
+        mean_prior=(prior.sum(axis=-1)/N).repeat(N).reshape(n,N)
+        mean_post=(posterior.sum(axis=-1)/N).repeat(N).reshape(n,N)
+        inflated=mean_post+(1-factor)*(posterior-mean_post)+factor*(prior-mean_prior)      
+        
+    return inflated
+
+
+@jit
+def EnKF(prior,obs,H,R,B):
     
     # The analysis step for the (stochastic) ensemble Kalman filter 
     # with virtual observations
 
-    n,N = ubi.shape # n is the state dimension and N is the size of ensemble
-    m = w.shape[0] # m is the size of measurement vector
+    n,N = prior.shape # n is the state dimension and N is the size of ensemble
+    m = obs.shape[0] # m is the size of measurement vector
+    
     mR = R.shape[0]
     nB = B.shape[0]
     mH, nH = H.shape
-    
     assert m==mR, "obseravtion and obs_cov_matrix have incompatible size"
     assert nB==n, "state and state_cov_matrix have incompatible size"
     assert m==mH, "obseravtion and obs operator have incompatible size"
     assert n==nH, "state and obs operator have incompatible size"
 
-    # compute the mean of forecast ensemble
-#     ub = ubi.sum(axis=-1)/N   
-    # compute Jacobian of observation operator at ub
     # compute Kalman gain
     D = H@B@H.T + R
     K = B @ H.T @ np.linalg.inv(D)
             
-#     wi = np.zeros((m,N))
-#     uai = np.zeros((n,N))
-    wi=w.repeat(N).reshape(m,N)+np.random.standard_normal((m,N))
-#     for i in range(N):
-        # create virtual observations
-#         wi[:,i] = w + np.random.multivariate_normal(np.zeros(m), R)
-        # compute analysis ensemble
-    uai = ubi + K @ (wi-H@ubi)
-    # compute the mean of analysis ensemble
-#     ua = ubi.sum(axis=-1)/N    
-    # compute analysis error covariance matrix
-#     P = (1/(N-1)) * (uai - ua.reshape(-1,1)) @ (uai - ua.reshape(-1,1)).T
-#     P = np.cov(uai)
-    return uai
+    # perturb observations
+    obs_ens=obs.repeat(N).reshape(m,N)+np.sqrt(R)@np.random.standard_normal((m,N))
+    # compute analysis ensemble
+    posterior = prior + K @ (obs_ens-H@prior)
+
+    return posterior
