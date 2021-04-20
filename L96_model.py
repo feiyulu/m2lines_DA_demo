@@ -23,8 +23,9 @@ def L96_eq1_xdot(X, F):
     K = len(X)
     Xdot = np.zeros(K)
     
-    for k in range(K):
-        Xdot[k] = ( X[(k+1)%K] - X[k-2] ) * X[k-1] - X[k] + F
+    Xdot = np.roll(X,1) * ( np.roll(X,-1) - np.roll(X,2) ) - X + F
+#     for k in range(K):
+#         Xdot[k] = ( X[(k+1)%K] - X[k-2] ) * X[k-1] - X[k] + F
     return Xdot
 
 @jit
